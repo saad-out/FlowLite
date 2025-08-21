@@ -7,12 +7,20 @@ services:
       - "7474:7474"   # Browser
       - "7687:7687"   # Bolt
     environment:
-      - NEO4J_AUTH=neo4j/testTEST0
+      - NEO4J_AUTH_FILE=/run/secrets/neo4j_auth
       - NEO4J_PLUGINS=["apoc"]
       - NEO4J_server_http_enabled=true
       - NEO4J_server_https_enabled=false
 
     volumes:
       - neo4j_data:/data
+
+    secrets:
+      - neo4j_auth
+
 volumes:
   neo4j_data:
+
+secrets:
+  neo4j_auth:
+    file: ./secrets/neo4j_auth.txt
