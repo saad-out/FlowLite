@@ -1,26 +1,44 @@
-version: "3.8"
+version: "3.9"
 services:
   neo4j:
     image: neo4j:5
     container_name: flowlite-neo4j
     ports:
-      - "7474:7474"   # Browser
-      - "7687:7687"   # Bolt
+      - "7474:7474"
+      - "7687:7687"
     environment:
-      - NEO4J_AUTH_FILE=/run/secrets/neo4j_auth
+      - NEO4J_AUTH=neo4j/testTEST0
       - NEO4J_PLUGINS=["apoc"]
-      - NEO4J_server_http_enabled=true
-      - NEO4J_server_https_enabled=false
-
     volumes:
-      - neo4j_data:/data
+      - ./neo4j/data:/data
+      - ./neo4j/conf:/var/lib/neo4j/conf
+      - ./neo4j/init:/var/lib/neo4j/import
+    networks:
+      - flowlite-net
 
-    secrets:
-      - neo4j_auth
+  data-loader:
+    build: ./neo4j/init
+    container_name: flowlite-loader
+    depends_on:
+      - neo4j
+    networks:
+      - flowlite-net
 
-volumes:
-  neo4j_data:
+  graphql:
+    build: ./graphql-server
+    container_name: flowlite-graphql
+    ports:
+      - "4000:4000"
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=testTEST0
+    depends_on:
+      - neo4j
+      - data-loader
+    networks:
+      - flowlite-net
 
-secrets:
-  neo4j_auth:
-    file: ./secrets/neo4j_auth.txt
+networks:
+  flowlite-net:
+    driver: bridge
