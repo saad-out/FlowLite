@@ -1,7 +1,7 @@
-# FlowLite
+# <p align="center">FlowLite</p>
 
 <p align="center">
-  <img src="https://github.com/saad-out/FlowLite/blob/main/FlowLite.png" style="height: 350px; width:500px;"/>
+  <img src="https://github.com/saad-out/FlowLite/blob/main/FlowLite.png" style="height: 250px; width:300px;"/>
 </p>
 
 FlowLite is a small project inspired by FlowBrave, designed to demonstrate a workflow management system using **Neo4j** and **GraphQL**. The project allows you to model workflows, steps, documents, and agents, and provides a GraphQL API to query and explore the data.
