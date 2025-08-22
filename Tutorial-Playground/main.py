@@ -1,12 +1,12 @@
-# neo4j_basics.py
+# flowlite_basics.py
 from neo4j import GraphDatabase
 
-URI = "bolt://localhost:7687"  # If you remapped ports, update this
+URI = "bolt://localhost:7687"  # Adjust if ports differ
 USER = "neo4j"
 PASSWORD = "testTEST0"
-DBNAME = "neo4j"               # default database name
+DBNAME = "neo4j"
 
-class Neo4jBasics:
+class FlowLiteBasics:
     def __init__(self, uri, user, password, database="neo4j"):
         self.driver = GraphDatabase.driver(uri, auth=(user, password))
         self.database = database
@@ -14,173 +14,199 @@ class Neo4jBasics:
     def close(self):
         self.driver.close()
 
-    # --- SCHEMA: constraints so identical records aren't duplicated ---
+    # --- SCHEMA: constraints ---
     def create_constraints(self):
         """
-        Cypher here:
-        CREATE CONSTRAINT student_name IF NOT EXISTS
-        FOR (s:Student) REQUIRE s.name IS UNIQUE
-
-        CREATE CONSTRAINT course_code IF NOT EXISTS
-        FOR (c:Course) REQUIRE c.code IS UNIQUE
+        Creates uniqueness constraints for nodes
         """
         with self.driver.session(database=self.database) as session:
             print("Creating constraints (if not exist)...")
             session.run("""
-                CREATE CONSTRAINT student_name IF NOT EXISTS
-                FOR (s:Student) REQUIRE s.name IS UNIQUE
+                CREATE CONSTRAINT workflow_name IF NOT EXISTS
+                FOR (w:Workflow) REQUIRE w.name IS UNIQUE
             """)
             session.run("""
-                CREATE CONSTRAINT course_code IF NOT EXISTS
-                FOR (c:Course) REQUIRE c.code IS UNIQUE
+                CREATE CONSTRAINT step_name IF NOT EXISTS
+                FOR (s:Step) REQUIRE s.name IS UNIQUE
+            """)
+            session.run("""
+                CREATE CONSTRAINT document_title IF NOT EXISTS
+                FOR (d:Document) REQUIRE d.title IS UNIQUE
+            """)
+            session.run("""
+                CREATE CONSTRAINT agent_name IF NOT EXISTS
+                FOR (a:Agent) REQUIRE a.name IS UNIQUE
             """)
             print("Constraints ready.")
 
-    # --- LOAD DATA: nodes + relationships using MERGE (idempotent) ---
+    # --- LOAD SAMPLE DATA: workflow, steps, docs, agents ---
     def load_sample_data(self):
-        students = [
-            {"name": "Alice"},
-            {"name": "Bob"},
-            {"name": "Charlie"},
+        workflows = [
+            {"name": "Refund Process", "goal": "Handle customer refunds within 7 days"},
         ]
-        courses = [
-            {"code": "CS101", "title": "Intro to Computer Science"},
-            {"code": "MATH100", "title": "Calculus I"},
+        steps = [
+            {"name": "Receive Request", "order": 1},
+            {"name": "Validate Receipt", "order": 2},
+            {"name": "Approve Refund", "order": 3},
+            {"name": "Send Payment", "order": 4},
         ]
-        enrollments = [
-            ("Alice", "CS101", "A"),
-            ("Bob", "CS101", "B+"),
-            ("Bob", "MATH100", "A-"),
-            ("Charlie", "MATH100", "B"),
+        documents = [
+            {"title": "Refund Policy PDF"},
+            {"title": "Receipt Template"},
+            {"title": "Approval Form"},
         ]
-        friendships = [
-            ("Alice", "Bob"),
-            ("Bob", "Charlie"),
+        agents = [
+            {"name": "Support Agent"},
+            {"name": "Finance Officer"},
         ]
 
         with self.driver.session(database=self.database) as session:
-            print("Creating Students...")
-            for s in students:
-                # MERGE creates if not exists, else matches existing
+            print("Creating Workflow...")
+            session.execute_write(
+                lambda tx: tx.run(
+                    """
+                    MERGE (w:Workflow {name: $name})
+                    SET w.goal = $goal
+                    RETURN w
+                    """,
+                    name=workflows[0]["name"],
+                    goal=workflows[0]["goal"],
+                )
+            )
+
+            print("Creating Steps...")
+            for s in steps:
                 session.execute_write(
                     lambda tx, s=s: tx.run(
                         """
-                        MERGE (st:Student {name: $name})
+                        MERGE (st:Step {name: $name})
+                        SET st.order = $order
                         RETURN st
                         """,
                         name=s["name"],
+                        order=s["order"],
                     )
                 )
 
-            print("Creating Courses...")
-            for c in courses:
+            print("Creating Documents...")
+            for d in documents:
                 session.execute_write(
-                    lambda tx, c=c: tx.run(
+                    lambda tx, d=d: tx.run(
                         """
-                        MERGE (co:Course {code: $code})
-                        SET co.title = $title
-                        RETURN co
+                        MERGE (doc:Document {title: $title})
+                        RETURN doc
                         """,
-                        code=c["code"],
-                        title=c["title"],
+                        title=d["title"],
                     )
                 )
 
-            print("Creating ENROLLED_IN relationships...")
-            for name, code, grade in enrollments:
+            print("Creating Agents...")
+            for a in agents:
                 session.execute_write(
-                    lambda tx, name=name, code=code, grade=grade: tx.run(
+                    lambda tx, a=a: tx.run(
                         """
-                        // MERGE both nodes to ensure they exist
-                        MERGE (s:Student {name: $name})
-                        MERGE (c:Course {code: $code})
-                        // Create (or match) the relationship and set a property
-                        MERGE (s)-[r:ENROLLED_IN]->(c)
-                        SET r.grade = $grade
+                        MERGE (ag:Agent {name: $name})
+                        RETURN ag
                         """,
-                        name=name,
-                        code=code,
-                        grade=grade,
+                        name=a["name"],
                     )
                 )
 
-            print("Creating FRIENDS_WITH relationships...")
-            for a, b in friendships:
+            print("Creating Relationships...")
+            # Workflow -> Steps
+            for s in steps:
                 session.execute_write(
-                    lambda tx, a=a, b=b: tx.run(
+                    lambda tx, s=s: tx.run(
                         """
-                        MERGE (s1:Student {name: $a})
-                        MERGE (s2:Student {name: $b})
-                        // Undirected friendship: ensure only one edge by merging both ways
-                        MERGE (s1)-[:FRIENDS_WITH]-(s2)
+                        MATCH (w:Workflow {name: $wname})
+                        MATCH (st:Step {name: $sname})
+                        MERGE (w)-[:HAS_STEP]->(st)
                         """,
-                        a=a,
-                        b=b,
+                        wname=workflows[0]["name"],
+                        sname=s["name"],
                     )
                 )
 
-            print("Data load complete.")
+            # Step ordering
+            for i in range(len(steps) - 1):
+                session.execute_write(
+                    lambda tx, s1=steps[i], s2=steps[i+1]: tx.run(
+                        """
+                        MATCH (s1:Step {name: $s1name})
+                        MATCH (s2:Step {name: $s2name})
+                        MERGE (s1)-[:NEXT]->(s2)
+                        """,
+                        s1name=s1["name"],
+                        s2name=s2["name"],
+                    )
+                )
 
-    # --- QUERIES: simple reads with MATCH/WHERE/RETURN ---
+            # Assign docs + agents
+            session.execute_write(
+                lambda tx: tx.run(
+                    """
+                    MATCH (s:Step {name: "Validate Receipt"})
+                    MATCH (d:Document {title: "Receipt Template"})
+                    MERGE (s)-[:NEEDS_DOC]->(d)
+                    """
+                )
+            )
+            session.execute_write(
+                lambda tx: tx.run(
+                    """
+                    MATCH (s:Step {name: "Approve Refund"})
+                    MATCH (a:Agent {name: "Finance Officer"})
+                    MERGE (s)-[:ASSIGNED_TO]->(a)
+                    """
+                )
+            )
+
+            print("Sample data load complete.")
+
+    # --- QUERIES ---
     def query_examples(self):
         with self.driver.session(database=self.database) as session:
-            print("\nAll enrollments (Student, Course, Grade):")
+            print("\nWorkflow with steps in order:")
             result = session.execute_read(
                 lambda tx: list(tx.run(
                     """
-                    MATCH (s:Student)-[r:ENROLLED_IN]->(c:Course)
-                    RETURN s.name AS student, c.code AS course, r.grade AS grade
-                    ORDER BY student, course
+                    MATCH (w:Workflow {name: "Refund Process"})-[:HAS_STEP]->(s:Step)
+                    RETURN s.name AS step, s.order AS order
+                    ORDER BY s.order
                     """
                 ))
             )
             for record in result:
-                print(f"  {record['student']} -> {record['course']} (grade: {record['grade']})")
+                print(f"  Step {record['order']}: {record['step']}")
 
-            print("\nClassmates of Bob (students who share any course):")
-            classmates = session.execute_read(
+            print("\nSteps and their documents:")
+            result = session.execute_read(
                 lambda tx: list(tx.run(
                     """
-                    MATCH (b:Student {name: $name})-[:ENROLLED_IN]->(c)<-[:ENROLLED_IN]-(classmate)
-                    WHERE classmate <> b
-                    RETURN DISTINCT classmate.name AS name
-                    ORDER BY name
-                    """,
-                    name="Bob",
-                ))
-            )
-            for record in classmates:
-                print(f"  {record['name']}")
-
-            print("\nNumber of students per course:")
-            counts = session.execute_read(
-                lambda tx: list(tx.run(
-                    """
-                    MATCH (:Student)-[:ENROLLED_IN]->(c:Course)
-                    RETURN c.title AS course, count(*) AS num_students
-                    ORDER BY num_students DESC
+                    MATCH (s:Step)-[:NEEDS_DOC]->(d:Document)
+                    RETURN s.name AS step, d.title AS doc
+                    ORDER BY s.name
                     """
                 ))
             )
-            for record in counts:
-                print(f"  {record['course']}: {record['num_students']}")
+            for record in result:
+                print(f"  {record['step']} needs {record['doc']}")
 
-            print("\nFriends of Alice:")
-            friends = session.execute_read(
+            print("\nSteps and their agents:")
+            result = session.execute_read(
                 lambda tx: list(tx.run(
                     """
-                    MATCH (:Student {name: $name})-[:FRIENDS_WITH]-(f)
-                    RETURN f.name AS friend
-                    ORDER BY friend
-                    """,
-                    name="Alice",
+                    MATCH (s:Step)-[:ASSIGNED_TO]->(a:Agent)
+                    RETURN s.name AS step, a.name AS agent
+                    ORDER BY s.name
+                    """
                 ))
             )
-            for record in friends:
-                print(f"  {record['friend']}")
+            for record in result:
+                print(f"  {record['step']} assigned to {record['agent']}")
 
 def main():
-    app = Neo4jBasics(URI, USER, PASSWORD, DBNAME)
+    app = FlowLiteBasics(URI, USER, PASSWORD, DBNAME)
     try:
         app.create_constraints()
         app.load_sample_data()

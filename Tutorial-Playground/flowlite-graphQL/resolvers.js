@@ -3,72 +3,102 @@ const driver = require('./neo4j');
 
 const resolvers = {
   Query: {
-    students: async () => {
+    workflows: async () => {
       const session = driver.session();
-      const result = await session.run(`MATCH (s:Student) RETURN s`);
+      const result = await session.run(`MATCH (w:Workflow) RETURN w`);
       session.close();
-      return result.records.map(record => ({ name: record.get('s').properties.name }));
+      return result.records.map(record => ({
+        name: record.get('w').properties.name,
+        goal: record.get('w').properties.goal
+      }));
     },
-    student: async (_, { name }) => {
+
+    workflow: async (_, { name }) => {
       const session = driver.session();
       const result = await session.run(
-        `MATCH (s:Student {name: $name}) RETURN s`,
+        `MATCH (w:Workflow {name: $name}) RETURN w`,
         { name }
       );
       session.close();
       if (result.records.length === 0) return null;
-      return { name: result.records[0].get('s').properties.name };
+      const w = result.records[0].get('w').properties;
+      return { name: w.name, goal: w.goal };
     },
-    courses: async () => {
+
+    steps: async () => {
       const session = driver.session();
-      const result = await session.run(`MATCH (c:Course) RETURN c`);
+      const result = await session.run(`MATCH (s:Step) RETURN s`);
       session.close();
       return result.records.map(record => ({
-        code: record.get('c').properties.code,
-        title: record.get('c').properties.title
+        name: record.get('s').properties.name,
+        order: record.get('s').properties.order?.toInt() || null
       }));
     },
-    course: async (_, { code }) => {
+
+    step: async (_, { name }) => {
       const session = driver.session();
       const result = await session.run(
-        `MATCH (c:Course {code: $code}) RETURN c`,
-        { code }
+        `MATCH (s:Step {name: $name}) RETURN s`,
+        { name }
       );
       session.close();
       if (result.records.length === 0) return null;
-      const c = result.records[0].get('c').properties;
-      return { code: c.code, title: c.title };
+      const s = result.records[0].get('s').properties;
+      return { name: s.name, order: s.order?.toInt() || null };
     }
   },
-  Student: {
-    courses: async (parent) => {
+
+  Workflow: {
+    steps: async (parent) => {
       const session = driver.session();
       const result = await session.run(
-        `MATCH (s:Student {name: $name})-[:ENROLLED_IN]->(c:Course) RETURN c`,
+        `MATCH (w:Workflow {name: $name})-[:HAS_STEP]->(s:Step)
+         RETURN s ORDER BY s.order`,
         { name: parent.name }
       );
       session.close();
-      return result.records.map(r => r.get('c').properties);
+      return result.records.map(r => ({
+        name: r.get('s').properties.name,
+        order: r.get('s').properties.order?.toInt() || null
+      }));
+    }
+  },
+
+  Step: {
+    next: async (parent) => {
+      const session = driver.session();
+      const result = await session.run(
+        `MATCH (s:Step {name: $name})-[:NEXT]->(n:Step) RETURN n`,
+        { name: parent.name }
+      );
+      session.close();
+      if (result.records.length === 0) return null;
+      const n = result.records[0].get('n').properties;
+      return { name: n.name, order: n.order?.toInt() || null };
     },
-    friends: async (parent) => {
+
+    documents: async (parent) => {
       const session = driver.session();
       const result = await session.run(
-        `MATCH (s:Student {name: $name})-[:FRIENDS_WITH]-(f) RETURN f`,
+        `MATCH (s:Step {name: $name})-[:NEEDS_DOC]->(d:Document) RETURN d`,
         { name: parent.name }
       );
       session.close();
-      return result.records.map(r => r.get('f').properties);
-    }
-  },
-  Course: {
-    students: async (parent) => {
+      return result.records.map(r => ({
+        title: r.get('d').properties.title
+      }));
+    },
+
+    agent: async (parent) => {
       const session = driver.session();
       const result = await session.run(
-        `MATCH (s:Student)-[:ENROLLED_IN]->(c:Course {code: $code}) RETURN s`,
-        { code: parent.code }
+        `MATCH (s:Step {name: $name})-[:ASSIGNED_TO]->(a:Agent) RETURN a`,
+        { name: parent.name }
       );
       session.close();
-      return result.records.map(r => r.get('s').properties);
+      if (result.records.length === 0) return null;
+      const a = result.records[0].get('a').properties;
+      return { name: a.name };
     }
   }
 };

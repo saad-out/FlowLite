@@ -2,24 +2,35 @@
 const { gql } = require('apollo-server-express');
 
 const typeDefs = gql`
-  type Student {
+  type Workflow {
     name: String!
-    courses: [Course]
-    friends: [Student]
+    goal: String
+    steps: [Step]
   }
 
-  type Course {
-    code: String!
-    title: String
-    students: [Student]
+  type Step {
+    name: String!
+    order: Int
+    next: Step
+    documents: [Document]
+    agent: Agent
+  }
+
+  type Document {
+    title: String!
+  }
+
+  type Agent {
+    name: String!
   }
 
   type Query {
-    students: [Student]
-    courses: [Course]
-    student(name: String!): Student
-    course(code: String!): Course
+    workflows: [Workflow]
+    workflow(name: String!): Workflow
+    steps: [Step]
+    step(name: String!): Step
   }
 `;
 
 module.exports = typeDefs;
+
